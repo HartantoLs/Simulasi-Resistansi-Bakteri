@@ -31,6 +31,12 @@ class Bacteria:
     last_reproduction: int = 0
     x: float = 0.0
     y: float = 0.0
+    parent_id: str = None
+    id: str = None
+    
+    def __post_init__(self):
+        if self.id is None:
+            self.id = f"bacteria_{random.randint(1000, 9999)}"
     
     def survive_antibiotic_exposure(self, antibiotic_level: float) -> bool:
         """Menghitung probabilitas bertahan hidup terhadap antibiotik"""
@@ -50,48 +56,16 @@ class Bacteria:
         reproduction_interval = max(1, int(self.reproduction_rate * 10))
         return (current_tick - self.last_reproduction) >= reproduction_interval
     
-    def reproduce(self, current_tick: int, canvas_width: int = 800, canvas_height: int = 400) -> List['Bacteria']:
-        """Reproduksi aseksual dengan mutasi"""
-        if not self.can_reproduce(current_tick):
-            return []
-        
-        self.last_reproduction = current_tick
-        offspring = []
-        
-        for _ in range(2):  # Pembelahan biner
-            mutation_strength = 0.15
-            
-            # Mutasi resistance_rate
-            resistance_mutation = random.uniform(-mutation_strength, mutation_strength)
-            new_resistance = max(0.0, min(1.0, self.resistance_rate + resistance_mutation))
-            
-            # Mutasi reproduction_rate dengan trade-off
-            reproduction_mutation = random.uniform(-mutation_strength/2, mutation_strength/2)
-            resistance_cost = new_resistance * 0.3
-            new_reproduction_rate = max(0.5, min(4.0, 
-                self.reproduction_rate + reproduction_mutation + resistance_cost))
-            
-            # Mutasi max_age
-            age_mutation = random.randint(-20, 20)
-            new_max_age = max(60, min(150, self.max_age + age_mutation))
-            
-            # Posisi anak
-            new_x = max(15, min(canvas_width-15, self.x + random.uniform(-40, 40)))
-            new_y = max(15, min(canvas_height-15, self.y + random.uniform(-40, 40)))
-            
-            child = Bacteria(
-                age=0,
-                resistance_rate=new_resistance,
-                reproduction_rate=new_reproduction_rate,
-                max_age=new_max_age,
-                generation=self.generation + 1,
-                last_reproduction=current_tick,
-                x=new_x,
-                y=new_y
-            )
-            offspring.append(child)
-        
-        return offspring
+    def get_size(self) -> float:
+        """Menghitung ukuran bakteri berdasarkan umur"""
+        age_ratio = self.age / self.max_age
+        base_size = 3
+        max_size = 15
+        return base_size + (max_size - base_size) * age_ratio
+    
+    def is_very_old(self) -> bool:
+        """Cek apakah bakteri sudah sangat tua (>80% umur maksimal)"""
+        return self.age / self.max_age > 0.8
 
 class BacteriaSimulation:
     def __init__(self):
@@ -104,6 +78,7 @@ class BacteriaSimulation:
         self.simulation_ended = False
         self.canvas_width = 800
         self.canvas_height = 400
+        self.min_bacteria_distance = 8
         
         # Data untuk grafik
         self.population_history = []
@@ -111,22 +86,70 @@ class BacteriaSimulation:
         self.tick_history = []
         self.generation_history = []
     
+    def is_position_valid(self, x: float, y: float, existing_bacteria: List[Bacteria], exclude_id: str = None) -> bool:
+        """Cek apakah posisi tidak terlalu dekat dengan bakteri lain"""
+        for bacteria in existing_bacteria:
+            if exclude_id and bacteria.id == exclude_id:
+                continue
+            distance = math.sqrt((bacteria.x - x) ** 2 + (bacteria.y - y) ** 2)
+            if distance < self.min_bacteria_distance:
+                return False
+        return True
+    
+    def find_empty_space_near_parent(self, parent_x: float, parent_y: float, existing_bacteria: List[Bacteria]) -> tuple:
+        """Mencari ruang kosong di dekat induk dengan prioritas ruang kosong"""
+        max_attempts = 50
+        base_radius = 20
+        
+        # Coba cari posisi dekat induk
+        for attempt in range(max_attempts):
+            radius = base_radius + attempt * 5  # Perluas radius pencarian secara bertahap
+            angle = random.uniform(0, 2 * math.pi)
+            
+            x = max(15, min(self.canvas_width - 15, parent_x + math.cos(angle) * radius))
+            y = max(15, min(self.canvas_height - 15, parent_y + math.sin(angle) * radius))
+            
+            if self.is_position_valid(x, y, existing_bacteria):
+                return x, y
+        
+        # Fallback: cari ruang kosong di mana saja
+        for attempt in range(100):
+            x = random.uniform(15, self.canvas_width - 15)
+            y = random.uniform(15, self.canvas_height - 15)
+            
+            if self.is_position_valid(x, y, existing_bacteria):
+                return x, y
+        
+        # Last resort: sedikit offset dari induk
+        return (
+            max(15, min(self.canvas_width - 15, parent_x + random.uniform(-10, 10))),
+            max(15, min(self.canvas_height - 15, parent_y + random.uniform(-10, 10)))
+        )
+    
     def initialize_population(self, population_size: int):
-        """Initialize bacteria population"""
+        """Initialize bacteria population dengan spacing yang baik"""
         self.bacteria_population = []
         self.initial_population = population_size
         
-        for _ in range(population_size):
-            bacteria = Bacteria(
-                age=random.randint(0, 15),
-                resistance_rate=random.uniform(0.05, 0.25),
-                reproduction_rate=random.uniform(0.8, 1.5),
-                max_age=random.randint(85, 120),
-                generation=0,
-                x=random.uniform(50, self.canvas_width-50),
-                y=random.uniform(50, self.canvas_height-50)
-            )
-            self.bacteria_population.append(bacteria)
+        for i in range(population_size):
+            attempts = 0
+            while attempts < 100:
+                x = random.uniform(50, self.canvas_width - 50)
+                y = random.uniform(50, self.canvas_height - 50)
+                
+                if self.is_position_valid(x, y, self.bacteria_population):
+                    bacteria = Bacteria(
+                        age=random.randint(0, 15),
+                        resistance_rate=random.uniform(0.05, 0.25),
+                        reproduction_rate=random.uniform(0.8, 1.5),
+                        max_age=random.randint(85, 120),
+                        generation=0,
+                        x=x,
+                        y=y
+                    )
+                    self.bacteria_population.append(bacteria)
+                    break
+                attempts += 1
         
         self.current_tick = 0
         self.current_max_generation = 0
@@ -135,6 +158,51 @@ class BacteriaSimulation:
         self.resistance_history = []
         self.tick_history = []
         self.generation_history = []
+    
+    def reproduce(self, parent: Bacteria, current_tick: int) -> List[Bacteria]:
+        """Reproduksi aseksual dengan mutasi dan penempatan yang lebih baik"""
+        if not parent.can_reproduce(current_tick):
+            return []
+        
+        parent.last_reproduction = current_tick
+        offspring = []
+        
+        for _ in range(2):  # Pembelahan biner
+            mutation_strength = 0.15
+            
+            # Mutasi resistance_rate
+            resistance_mutation = random.uniform(-mutation_strength, mutation_strength)
+            new_resistance = max(0.0, min(1.0, parent.resistance_rate + resistance_mutation))
+            
+            # Mutasi reproduction_rate dengan trade-off
+            reproduction_mutation = random.uniform(-mutation_strength/2, mutation_strength/2)
+            resistance_cost = new_resistance * 0.3
+            new_reproduction_rate = max(0.5, min(4.0, 
+                parent.reproduction_rate + reproduction_mutation + resistance_cost))
+            
+            # Mutasi max_age
+            age_mutation = random.randint(-20, 20)
+            new_max_age = max(60, min(150, parent.max_age + age_mutation))
+            
+            # Posisi anak dengan prioritas ruang kosong
+            new_x, new_y = self.find_empty_space_near_parent(
+                parent.x, parent.y, self.bacteria_population + offspring
+            )
+            
+            child = Bacteria(
+                age=0,
+                resistance_rate=new_resistance,
+                reproduction_rate=new_reproduction_rate,
+                max_age=new_max_age,
+                generation=parent.generation + 1,
+                last_reproduction=current_tick,
+                x=new_x,
+                y=new_y,
+                parent_id=parent.id
+            )
+            offspring.append(child)
+        
+        return offspring
     
     def simulation_step(self):
         """Execute one simulation step"""
@@ -157,7 +225,7 @@ class BacteriaSimulation:
         # Reproduction
         new_bacteria = []
         for bacteria in surviving_bacteria:
-            offspring = bacteria.reproduce(self.current_tick, self.canvas_width, self.canvas_height)
+            offspring = self.reproduce(bacteria, self.current_tick)
             new_bacteria.extend(offspring)
         
         # Update population
@@ -203,15 +271,19 @@ class BacteriaSimulation:
                 'resistance_range': (0, 0),
                 'high_resistance_count': 0,
                 'medium_resistance_count': 0,
-                'low_resistance_count': 0
+                'low_resistance_count': 0,
+                'very_old_count': 0,
+                'avg_age': 0
             }
         
         resistances = [b.resistance_rate for b in self.bacteria_population]
         reproductions = [b.reproduction_rate for b in self.bacteria_population]
+        ages = [b.age for b in self.bacteria_population]
         
         high_res = sum(1 for r in resistances if r > 0.7)
         med_res = sum(1 for r in resistances if 0.3 <= r <= 0.7)
         low_res = len(resistances) - high_res - med_res
+        very_old = sum(1 for b in self.bacteria_population if b.is_very_old())
         
         return {
             'population': len(self.bacteria_population),
@@ -220,7 +292,9 @@ class BacteriaSimulation:
             'resistance_range': (min(resistances), max(resistances)),
             'high_resistance_count': high_res,
             'medium_resistance_count': med_res,
-            'low_resistance_count': low_res
+            'low_resistance_count': low_res,
+            'very_old_count': very_old,
+            'avg_age': np.mean(ages)
         }
 
 # Initialize session state
@@ -302,39 +376,100 @@ with col1:
     st.subheader("🔬 Visualisasi Populasi Bakteri")
     
     if st.session_state.simulation.bacteria_population:
-        # Create scatter plot for bacteria visualization
+        # Create enhanced scatter plot for bacteria visualization
         bacteria_data = []
         for bacteria in st.session_state.simulation.bacteria_population:
+            # Ukuran berdasarkan umur
+            size = bacteria.get_size()
+            
+            # Warna berdasarkan resistansi dengan skala yang jelas
+            resistance_category = "Rendah"
+            if bacteria.resistance_rate > 0.7:
+                resistance_category = "Tinggi"
+            elif bacteria.resistance_rate >= 0.3:
+                resistance_category = "Sedang"
+            
             bacteria_data.append({
                 'x': bacteria.x,
                 'y': bacteria.y,
                 'resistance': bacteria.resistance_rate,
                 'age': bacteria.age,
                 'generation': bacteria.generation,
-                'size': 5 + bacteria.age / 10
+                'size': size,
+                'very_old': bacteria.is_very_old(),
+                'resistance_category': resistance_category,
+                'max_age': bacteria.max_age,
+                'age_ratio': bacteria.age / bacteria.max_age
             })
         
         df_bacteria = pd.DataFrame(bacteria_data)
         
-        # Create plotly scatter plot
+        # Create plotly scatter plot dengan perbaikan
         fig_bacteria = px.scatter(
             df_bacteria, 
             x='x', y='y', 
             color='resistance',
             size='size',
-            hover_data=['age', 'generation'],
+            hover_data={
+                'age': True, 
+                'generation': True, 
+                'resistance_category': True,
+                'very_old': True,
+                'x': False,
+                'y': False,
+                'size': False
+            },
             color_continuous_scale='RdYlBu_r',
-            title="Distribusi Bakteri (Warna = Resistansi, Ukuran = Umur)"
+            title="Distribusi Bakteri (Warna = Resistansi, Ukuran = Umur)",
+            labels={
+                'resistance': 'Tingkat Resistansi',
+                'age': 'Umur',
+                'generation': 'Generasi',
+                'resistance_category': 'Kategori Resistansi',
+                'very_old': 'Sangat Tua'
+            }
         )
+        
+        # Tambahkan lingkaran tipis untuk bakteri sangat tua
+        very_old_bacteria = df_bacteria[df_bacteria['very_old'] == True]
+        if not very_old_bacteria.empty:
+            fig_bacteria.add_trace(
+                go.Scatter(
+                    x=very_old_bacteria['x'],
+                    y=very_old_bacteria['y'],
+                    mode='markers',
+                    marker=dict(
+                        size=very_old_bacteria['size'] + 8,
+                        color='rgba(0,0,0,0)',
+                        line=dict(color='black', width=2)
+                    ),
+                    name='Bakteri Sangat Tua',
+                    hovertemplate='Bakteri Sangat Tua<br>Umur: %{customdata[0]}<br>Resistansi: %{customdata[1]:.3f}<extra></extra>',
+                    customdata=very_old_bacteria[['age', 'resistance']].values,
+                    showlegend=True
+                )
+            )
         
         fig_bacteria.update_layout(
             width=800, height=400,
             xaxis_range=[0, 800],
             yaxis_range=[0, 400],
-            showlegend=False
+            xaxis_title="Posisi X",
+            yaxis_title="Posisi Y"
         )
         
         st.plotly_chart(fig_bacteria, use_container_width=True)
+        
+        # Informasi tambahan tentang visualisasi
+        st.info("""
+        **Legenda Visualisasi:**
+        - 🔴 **Merah**: Resistansi Tinggi (>0.7)
+        - 🟡 **Kuning**: Resistansi Sedang (0.3-0.7)  
+        - 🔵 **Biru**: Resistansi Rendah (<0.3)
+        - **Ukuran**: Semakin besar = Semakin tua
+        - **Lingkaran Hitam**: Bakteri sangat tua (>80% umur maksimal)
+        """)
+        
     else:
         st.info("Populasi kosong. Klik Reset untuk memulai simulasi baru.")
     
@@ -356,7 +491,8 @@ with col1:
                 y=st.session_state.simulation.population_history,
                 mode='lines+markers',
                 name='Populasi',
-                line=dict(color='blue', width=3)
+                line=dict(color='blue', width=3),
+                marker=dict(size=4)
             ),
             row=1, col=1
         )
@@ -368,8 +504,18 @@ with col1:
                 y=st.session_state.simulation.resistance_history,
                 mode='lines+markers',
                 name='Resistansi Rata-rata',
-                line=dict(color='red', width=3)
+                line=dict(color='red', width=3),
+                marker=dict(size=4)
             ),
+            row=2, col=1
+        )
+        
+        # Add antibiotic level line
+        fig_evolution.add_hline(
+            y=antibiotic_level, 
+            line_dash="dash", 
+            line_color="orange",
+            annotation_text=f"Level Antibiotik ({antibiotic_level:.2f})",
             row=2, col=1
         )
         
@@ -399,6 +545,8 @@ with col2:
     st.metric("🧬 Generasi Max", st.session_state.simulation.current_max_generation)
     st.metric("🛡️ Resistansi Rata-rata", f"{stats['avg_resistance']:.3f}")
     st.metric("🔄 Reproduksi Rata-rata", f"{stats['avg_reproduction']:.3f}")
+    st.metric("👴 Bakteri Sangat Tua", stats['very_old_count'])
+    st.metric("📊 Umur Rata-rata", f"{stats['avg_age']:.1f}")
     st.metric("💊 Level Antibiotik", f"{antibiotic_level:.3f}")
     
     # Resistance distribution
@@ -418,10 +566,18 @@ with col2:
             df_resistance, 
             values='Jumlah', 
             names='Kategori',
-            color_discrete_sequence=['#ff4757', '#ffa502', '#3742fa']
+            color_discrete_sequence=['#ff4757', '#ffa502', '#3742fa'],
+            title="Distribusi Kategori Resistansi"
         )
         fig_pie.update_layout(height=300)
         st.plotly_chart(fig_pie, use_container_width=True)
+        
+        # Tampilkan persentase
+        total = stats['population']
+        st.write("**Persentase Resistansi:**")
+        st.write(f"🔴 Tinggi: {stats['high_resistance_count']/total*100:.1f}%")
+        st.write(f"🟡 Sedang: {stats['medium_resistance_count']/total*100:.1f}%")
+        st.write(f"🔵 Rendah: {stats['low_resistance_count']/total*100:.1f}%")
     
     # Simulation status
     st.subheader("⚡ Status Simulasi")
@@ -446,6 +602,8 @@ with col2:
         **Trade-off**: Resistansi tinggi mengurangi kecepatan reproduksi.
         
         **Genetic Drift**: Perubahan frekuensi gen dalam populasi kecil.
+        
+        **Aging**: Bakteri bertambah besar seiring umur dan mendapat penanda visual saat sangat tua.
         """)
     
     with st.expander("💡 Tips Penggunaan"):
@@ -453,9 +611,23 @@ with col2:
         1. **Mulai dengan populasi kecil** (50-100) untuk performa optimal
         2. **Tingkatkan antibiotik** untuk melihat seleksi yang kuat
         3. **Amati trade-off** antara resistansi dan reproduksi
-        4. **Export data** untuk analisis lebih lanjut
-        5. **Gunakan auto-run** untuk simulasi otomatis
+        4. **Perhatikan bakteri tua** dengan lingkaran hitam
+        5. **Lihat penyebaran anak** dekat induk di ruang kosong
+        6. **Export data** untuk analisis lebih lanjut
+        7. **Gunakan auto-run** untuk simulasi otomatis
         """)
+    
+    # with st.expander("🎨 Fitur Visualisasi Baru"):
+    #     st.markdown("""
+    #     **Peningkatan Visualisasi:**
+    #     - ✅ Ukuran bakteri bertambah seiring umur
+    #     - ✅ Lingkaran tipis untuk bakteri sangat tua (>80% umur max)
+    #     - ✅ Anak bakteri menyebar dekat induk
+    #     - ✅ Prioritas ruang kosong untuk reproduksi
+    #     - ✅ Warna resistansi yang jelas (Merah-Kuning-Biru)
+    #     - ✅ Hover info yang informatif
+    #     - ✅ Statistik umur dan bakteri tua
+    #     """)
 
 # Auto-run logic
 if st.session_state.auto_run and not st.session_state.simulation.simulation_ended:
