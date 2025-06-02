@@ -337,13 +337,22 @@ with st.sidebar:
         if st.button("▶️ Start/Stop", use_container_width=True):
             st.session_state.is_running = not st.session_state.is_running
             st.session_state.auto_run = st.session_state.is_running
+            st.rerun()  # Tambahkan rerun untuk memastikan state terupdate
     
-    # Auto-run toggle
+    # Auto-run toggle - PERBAIKAN: Sinkronisasi dengan is_running
     auto_run = st.checkbox("🔄 Auto-run", value=st.session_state.auto_run)
-    st.session_state.auto_run = auto_run
     
-    if auto_run:
+    # PERBAIKAN: Update auto_run hanya jika berbeda
+    if auto_run != st.session_state.auto_run:
+        st.session_state.auto_run = auto_run
+        st.session_state.is_running = auto_run
+        st.rerun()
+    
+    # Speed control - hanya tampil jika auto_run aktif
+    if st.session_state.auto_run:
         speed = st.slider("Kecepatan (ms)", 100, 2000, 500)
+    else:
+        speed = 500  # default value
     
     # Manual step
     if st.button("➡️ Step Manual", use_container_width=True):
@@ -367,6 +376,15 @@ with st.sidebar:
             "bacteria_simulation_data.json",
             "application/json"
         )
+    
+    # PERBAIKAN: Status indicator yang jelas
+    st.subheader("⚡ Status Simulasi")
+    if st.session_state.auto_run and st.session_state.is_running:
+        st.success("🔄 **BERJALAN** - Auto-run aktif")
+    elif st.session_state.is_running:
+        st.info("▶️ **SIAP** - Manual mode")
+    else:
+        st.warning("⏸️ **BERHENTI** - Simulasi pause")
 
 # Main content area
 col1, col2 = st.columns([2, 1])
@@ -468,6 +486,7 @@ with col1:
         - 🔵 **Biru**: Resistansi Rendah (<0.3)
         - **Ukuran**: Semakin besar = Semakin tua
         - **Lingkaran Hitam**: Bakteri sangat tua (>80% umur maksimal)
+        - **Posisi**: Anak bakteri muncul dekat induk di ruang kosong
         """)
         
     else:
@@ -579,18 +598,6 @@ with col2:
         st.write(f"🟡 Sedang: {stats['medium_resistance_count']/total*100:.1f}%")
         st.write(f"🔵 Rendah: {stats['low_resistance_count']/total*100:.1f}%")
     
-    # Simulation status
-    st.subheader("⚡ Status Simulasi")
-    if st.session_state.simulation.simulation_ended:
-        if stats['population'] == 0:
-            st.error("💀 Populasi Punah!")
-        else:
-            st.success("✅ Simulasi Selesai!")
-    elif st.session_state.is_running:
-        st.info("🔄 Simulasi Berjalan...")
-    else:
-        st.warning("⏸️ Simulasi Berhenti")
-    
     # Information panel
     st.subheader("📚 Informasi")
     with st.expander("🧬 Konsep Biologi"):
@@ -615,32 +622,27 @@ with col2:
         5. **Lihat penyebaran anak** dekat induk di ruang kosong
         6. **Export data** untuk analisis lebih lanjut
         7. **Gunakan auto-run** untuk simulasi otomatis
+        8. **Klik Start/Stop** untuk pause/resume simulasi
         """)
-    
-    # with st.expander("🎨 Fitur Visualisasi Baru"):
-    #     st.markdown("""
-    #     **Peningkatan Visualisasi:**
-    #     - ✅ Ukuran bakteri bertambah seiring umur
-    #     - ✅ Lingkaran tipis untuk bakteri sangat tua (>80% umur max)
-    #     - ✅ Anak bakteri menyebar dekat induk
-    #     - ✅ Prioritas ruang kosong untuk reproduksi
-    #     - ✅ Warna resistansi yang jelas (Merah-Kuning-Biru)
-    #     - ✅ Hover info yang informatif
-    #     - ✅ Statistik umur dan bakteri tua
-    #     """)
 
-# Auto-run logic
-if st.session_state.auto_run and not st.session_state.simulation.simulation_ended:
+
+# PERBAIKAN: Auto-run logic yang lebih robust
+if st.session_state.auto_run and st.session_state.is_running and not st.session_state.simulation.simulation_ended:
     if (st.session_state.simulation.current_max_generation < st.session_state.simulation.max_generations and 
         len(st.session_state.simulation.bacteria_population) > 0):
         
-        time.sleep(speed / 1000)  # Convert ms to seconds
+        # Jalankan step simulasi
         st.session_state.simulation.simulation_step()
+        
+        # Sleep dan rerun
+        time.sleep(speed / 1000)
         st.rerun()
     else:
+        # Simulasi berakhir
         st.session_state.simulation.simulation_ended = True
         st.session_state.is_running = False
         st.session_state.auto_run = False
+        st.rerun()
 
 # Footer
 st.markdown("---")
