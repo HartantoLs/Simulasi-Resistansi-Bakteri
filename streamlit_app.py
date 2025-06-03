@@ -22,27 +22,30 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* Slider track */
+/* Target the slider track */
 .stSlider > div > div > div > div {
-    background: linear-gradient(to right, #1f77b4 0%, #1f77b4 100%);
+    background-color: #1f77b4 !important;
 }
 
-/* Slider thumb */
-.stSlider > div > div > div > div > div {
+/* Target the slider thumb/handle */
+.stSlider > div > div > div > div > div[role="slider"] {
+    background-color: #0066cc !important;
+}
+
+/* Alternative selector for slider thumb */
+div[data-testid="stSlider"] div[role="slider"] {
     background-color: #0066cc !important;
     border: 2px solid #004499 !important;
 }
 
-/* Slider thumb hover */
-.stSlider > div > div > div > div > div:hover {
-    background-color: #0052a3 !important;
-    border: 2px solid #003366 !important;
+/* Target slider track specifically */
+div[data-testid="stSlider"] > div > div > div > div {
+    background: linear-gradient(90deg, #1f77b4 0%, #87ceeb 100%) !important;
 }
 
-/* Slider value display */
-.stSlider > div > div > div > div[data-testid="stTickBar"] > div {
+/* For the slider value text */
+div[data-testid="stSlider"] div[data-testid="stMarkdownContainer"] {
     color: #0066cc !important;
-    font-weight: bold !important;
 }
 </style>
 """, unsafe_allow_html=True)
