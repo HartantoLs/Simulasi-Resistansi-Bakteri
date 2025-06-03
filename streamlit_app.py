@@ -20,6 +20,33 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+st.markdown("""
+<style>
+/* Slider track */
+.stSlider > div > div > div > div {
+    background: linear-gradient(to right, #1f77b4 0%, #1f77b4 100%);
+}
+
+/* Slider thumb */
+.stSlider > div > div > div > div > div {
+    background-color: #0066cc !important;
+    border: 2px solid #004499 !important;
+}
+
+/* Slider thumb hover */
+.stSlider > div > div > div > div > div:hover {
+    background-color: #0052a3 !important;
+    border: 2px solid #003366 !important;
+}
+
+/* Slider value display */
+.stSlider > div > div > div > div[data-testid="stTickBar"] > div {
+    color: #0066cc !important;
+    font-weight: bold !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 @dataclass
 class Bacteria:
     """Kelas untuk merepresentasikan bakteri individual"""
